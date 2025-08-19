@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minhas Finanças - Controle de Despesas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        #chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+        }
+        .unpaid-row:hover { background-color: #FEE2E2; }
+        .paid-row { text-decoration: line-through; opacity: 0.6; }
+        .paid-row:hover { background-color: #F3F4F6; }
+        .modal-overlay {
+            transition: opacity 0.3s ease;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto max-w-7xl p-4 sm:p-6 md:p-8">
+        
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold text-gray-900">Minhas Finanças</h1>
+            <p class="text-gray-500 mt-1">Seu controle de despesas simplificado e sincronizado.</p>
+        </header>
+
+        <main>
+            <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                <!-- Coluna da Esquerda: Adicionar/Editar e Gráfico -->
+                <div class="lg:col-span-2 space-y-8">
+                    <section id="form-section">
+                        <h2 id="form-title" class="text-2xl font-semibold mb-4">Adicionar Nova Despesa</h2>
+                        <form id="transaction-form" class="bg-white p-6 rounded-xl shadow-md border border-gray-200 space-y-4">
+                            <input type="hidden" id="transaction-id">
+                            <div>
+                                <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Descrição (Conta)</label>
+                                <input type="text" id="description" placeholder="Ex: Aluguel, Supermercado" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                    <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">Valor da Parcela (R$)</label>
+                                    <input type="number" id="amount" placeholder="0,00" step="0.01" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+                                </div>
+                                <div>
+                                    <label for="installments" class="block text-sm font-medium text-gray-700 mb-1">Nº de Parcelas</label>
+                                    <input type="number" id="installments" value="1" min="1" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+                                </div>
+                                <div>
+                                    <label for="dueDate" class="block text-sm font-medium text-gray-700 mb-1">Vencimento (1ª Parcela)</label>
+                                    <input type="date" id="dueDate" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500" required>
+                                </div>
+                                <div>
+                                    <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Categoria</label>
+                                    <select id="category" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"></select>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="paymentMethod" class="block text-sm font-medium text-gray-700 mb-1">Forma de Pagamento</label>
+                                <select id="paymentMethod" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"></select>
+                            </div>
+                            <button type="submit" id="form-button" class="w-full bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                                Adicionar Despesa
+                            </button>
+                            <button type="button" id="cancel-edit-btn" class="hidden w-full bg-gray-500 text-white font-semibold py-3 px-4 rounded-lg hover:bg-gray-600 transition-colors mt-2">
+                                Cancelar Edição
+                            </button>
+                        </form>
+                    </section>
+
+                    <section id="expense-chart-section">
+                         <h2 class="text-2xl font-semibold mb-4">Despesas por Categoria</h2>
+                        <div class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                            <div id="chart-container"><canvas id="expense-chart"></canvas></div>
+                        </div>
+                    </section>
+                </div>
+
+                <!-- Coluna da Direita: Histórico -->
+                <div class="lg:col-span-3">
+                    <section id="transaction-history" class="bg-white p-6 rounded-xl shadow-md border border-gray-200">
+                        <div class="flex justify-between items-center mb-4">
+                           <button id="prev-month-btn" class="p-2 rounded-full hover:bg-gray-200"><svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+                            <h3 id="current-month-display" class="text-xl font-semibold text-center"></h3>
+                            <button id="next-month-btn" class="p-2 rounded-full hover:bg-gray-200"><svg class="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+                        </div>
+                        <div class="flex justify-between items-center mb-4 border-t pt-4">
+                             <div class="space-y-1">
+                                <h2 class="text-xl font-semibold">Lista de Despesas</h2>
+                                <button id="analyze-expenses-btn" class="flex items-center space-x-2 text-sm bg-purple-100 text-purple-700 font-semibold py-2 px-3 rounded-lg hover:bg-purple-200 transition-colors">
+                                    <span>✨ Analisar Despesas</span>
+                                </button>
+                             </div>
+                             <div class="text-right">
+                                 <p class="text-sm text-gray-500">Total a Pagar (Mês):</p>
+                                 <p id="total-expense-display" class="text-xl font-bold text-red-600">R$ 0,00</p>
+                             </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                            <select id="filter-category" class="w-full px-4 py-2 border border-gray-300 rounded-lg"></select>
+                            <select id="filter-payment" class="w-full px-4 py-2 border border-gray-300 rounded-lg"></select>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pago</th>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Conta</th>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vencimento</th>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoria</th>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Pagamento</th>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Parcela</th>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                                        <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="transaction-list" class="bg-white divide-y divide-gray-200"></tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 z-50">...</div>
+    <div id="gemini-analysis-modal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 z-50">...</div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, collection, onSnapshot, addDoc, doc, updateDoc, deleteDoc, query, where, writeBatch, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            // --- Configuração do Firebase ---
+            const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            let userId;
+            let transactionsCollection;
+            let allTransactions = [];
+
+            // --- Elementos do DOM ---
+            const elements = {
+                totalExpenseDisplay: document.getElementById('total-expense-display'),
+                transactionList: document.getElementById('transaction-list'),
+                transactionForm: document.getElementById('transaction-form'),
+                descriptionInput: document.getElementById('description'),
+                amountInput: document.getElementById('amount'),
+                installmentsInput: document.getElementById('installments'),
+                dueDateInput: document.getElementById('dueDate'),
+                categoryInput: document.getElementById('category'),
+                paymentMethodInput: document.getElementById('paymentMethod'),
+                chartContainer: document.getElementById('chart-container'),
+                prevMonthBtn: document.getElementById('prev-month-btn'),
+                nextMonthBtn: document.getElementById('next-month-btn'),
+                currentMonthDisplay: document.getElementById('current-month-display'),
+                filterCategory: document.getElementById('filter-category'),
+                filterPayment: document.getElementById('filter-payment'),
+                formTitle: document.getElementById('form-title'),
+                formButton: document.getElementById('form-button'),
+                cancelEditBtn: document.getElementById('cancel-edit-btn'),
+                transactionIdInput: document.getElementById('transaction-id'),
+                deleteModal: document.getElementById('delete-modal'),
+                deleteModalInstallmentText: document.getElementById('delete-modal-installment-text'),
+                deleteModalSingleText: document.getElementById('delete-modal-single-text'),
+                deleteOneBtn: document.getElementById('delete-one-btn'),
+                deleteAllBtn: document.getElementById('delete-all-btn'),
+                cancelDeleteBtn: document.getElementById('cancel-delete-btn'),
+                analyzeExpensesBtn: document.getElementById('analyze-expenses-btn'),
+                geminiAnalysisModal: document.getElementById('gemini-analysis-modal'),
+                closeGeminiModalBtn: document.getElementById('close-gemini-modal-btn'),
+                geminiAnalysisContent: document.getElementById('gemini-analysis-content'),
+            };
+
+            // --- Variáveis de Estado ---
+            let chartInstance = null;
+            let currentDate = new Date();
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            let editMode = false;
+            
+            const categories = ["Moradia", "Alimentação", "Transporte", "Lazer", "Saúde", "Educação", "Outros"];
+            const categoryColors = { "Moradia": "#3B82F6", "Alimentação": "#10B981", "Transporte": "#F59E0B", "Lazer": "#8B5CF6", "Saúde": "#EF4444", "Educação": "#14B8A6", "Outros": "#6B7280" };
+            const paymentMethods = ["Pix", "Débito em conta", "Débito em folha", "Mercado Pago", "Nubank", "Itaú", "Sicredi", "Boleto", "Terceiros"];
+
+            // --- Funções Auxiliares ---
+            const formatCurrency = (amount) => amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            const formatDate = (dateString) => new Date(dateString).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
+
+            // --- Funções Principais da UI ---
+            function setupUI() {
+                const today = new Date();
+                elements.dueDateInput.value = today.toISOString().split('T')[0];
+                
+                elements.categoryInput.innerHTML = categories.map(c => `<option value="${c}">${c}</option>`).join('');
+                elements.paymentMethodInput.innerHTML = paymentMethods.map(p => `<option value="${p}">${p}</option>`).join('');
+                elements.filterCategory.innerHTML = '<option value="all">Todas as Categorias</option>' + categories.map(c => `<option value="${c}">${c}</option>`).join('');
+                elements.filterPayment.innerHTML = '<option value="all">Todas as Formas de Pagamento</option>' + paymentMethods.map(p => `<option value="${p}">${p}</option>`).join('');
+
+                updateMonthDisplay();
+                renderPage();
+            }
+
+            function updateMonthDisplay() {
+                const options = { year: 'numeric', month: 'long' };
+                let formattedDate = new Intl.DateTimeFormat('pt-BR', options).format(currentDate);
+                elements.currentMonthDisplay.textContent = formattedDate.charAt(0).toUpperCase() + formattedDate.slice(1);
+            }
+
+            function renderPage() {
+                const month = currentDate.getMonth();
+                const year = currentDate.getFullYear();
+
+                let monthlyTransactions = allTransactions.filter(t => {
+                    const tDate = new Date(t.dueDate);
+                    return tDate.getUTCMonth() == month && tDate.getUTCFullYear() == year;
+                });
+
+                let filteredTransactions = monthlyTransactions;
+                if (elements.filterCategory.value !== 'all') {
+                    filteredTransactions = filteredTransactions.filter(t => t.category === elements.filterCategory.value);
+                }
+                if (elements.filterPayment.value !== 'all') {
+                    filteredTransactions = filteredTransactions.filter(t => t.paymentMethod === elements.filterPayment.value);
+                }
+                
+                updateSummary(filteredTransactions);
+                renderTransactionList(filteredTransactions);
+                renderChart(monthlyTransactions);
+            }
+
+            function updateSummary(transactions) {
+                const total = transactions
+                    .filter(t => !t.isPaid)
+                    .reduce((acc, t) => acc + t.amount, 0);
+                elements.totalExpenseDisplay.textContent = formatCurrency(Math.abs(total));
+            }
+
+            function renderTransactionList(transactions) {
+                elements.transactionList.innerHTML = '';
+                if (transactions.length === 0) {
+                    elements.transactionList.innerHTML = `<tr><td colspan="8" class="text-center text-gray-500 p-4">Nenhuma despesa para este mês.</td></tr>`;
+                    return;
+                }
+                
+                transactions.sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+                transactions.forEach(t => {
+                    const row = document.createElement('tr');
+                    row.className = `transaction-item text-sm ${t.isPaid ? 'paid-row' : 'unpaid-row'}`;
+                    row.dataset.id = t.id;
+                    const totalAmountDisplay = t.groupId.startsWith('group-') ? formatCurrency(Math.abs(t.totalAmount)) : '—';
+                    row.innerHTML = `
+                        <td class="px-2 py-2"><input type="checkbox" ${t.isPaid ? 'checked' : ''} onchange="window.togglePaidStatus('${t.id}')" class="h-4 w-4 text-blue-600 border-gray-300 rounded"></td>
+                        <td class="px-2 py-2"><span class="font-medium">${t.description}</span></td>
+                        <td class="px-2 py-2 text-gray-500">${formatDate(t.dueDate)}</td>
+                        <td class="px-2 py-2 text-gray-500">${t.category}</td>
+                        <td class="px-2 py-2 text-gray-500">${t.paymentMethod}</td>
+                        <td class="px-2 py-2 font-semibold text-red-500">${formatCurrency(Math.abs(t.amount))}</td>
+                        <td class="px-2 py-2 font-semibold text-gray-700">${totalAmountDisplay}</td>
+                        <td class="px-2 py-2">
+                            <div class="flex items-center space-x-2">
+                                <button onclick="window.startEditTransaction('${t.id}')" class="text-gray-400 hover:text-blue-600"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg></button>
+                                <button onclick="window.promptDelete('${t.id}', '${t.groupId}')" class="text-gray-400 hover:text-red-600"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                            </div>
+                        </td>
+                    `;
+                    elements.transactionList.appendChild(row);
+                });
+            }
+
+            function renderChart(transactions) {
+                if (chartInstance) chartInstance.destroy();
+                if (transactions.length === 0) {
+                    elements.chartContainer.innerHTML = '<p class="text-center text-gray-500 p-4">Sem dados para exibir.</p>';
+                    return;
+                }
+                elements.chartContainer.innerHTML = '<canvas id="expense-chart"></canvas>';
+                const ctx = document.getElementById('expense-chart').getContext('2d');
+                const expensesByCategory = transactions.reduce((acc, t) => {
+                    acc[t.category] = (acc[t.category] || 0) + Math.abs(t.amount);
+                    return acc;
+                }, {});
+                chartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(expensesByCategory),
+                        datasets: [{
+                            data: Object.values(expensesByCategory),
+                            backgroundColor: Object.keys(expensesByCategory).map(label => categoryColors[label]),
+                            borderColor: '#ffffff',
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom' }, tooltip: { callbacks: { label: (c) => `${c.label}: ${formatCurrency(c.parsed)}` } } }
+                    }
+                });
+            }
+
+            async function handleFormSubmit(e) {
+                e.preventDefault();
+                if (!elements.descriptionInput.value.trim() || !elements.amountInput.value || !elements.dueDateInput.value) {
+                    alert('Por favor, preencha descrição, valor e vencimento.');
+                    return;
+                }
+                if (editMode) { await saveTransaction(); } else { await addTransaction(); }
+            }
+
+            async function addTransaction() {
+                const installments = parseInt(elements.installmentsInput.value) || 1;
+                const installmentValue = parseFloat(elements.amountInput.value);
+                const totalAmount = installmentValue * installments;
+                const initialDueDate = new Date(elements.dueDateInput.value);
+                const groupId = `group-${Date.now()}`;
+                const batch = writeBatch(db);
+                for (let i = 0; i < installments; i++) {
+                    const currentDueDate = new Date(initialDueDate);
+                    currentDueDate.setUTCMonth(initialDueDate.getUTCMonth() + i);
+                    const descriptionText = installments > 1 ? `${elements.descriptionInput.value} (${i + 1}/${installments})` : elements.descriptionInput.value;
+                    const newTransactionData = { groupId: installments > 1 ? groupId : `single-${Date.now()}`, description: descriptionText, amount: -Math.abs(installmentValue), totalAmount: -Math.abs(totalAmount), dueDate: currentDueDate.toISOString().split('T')[0], category: elements.categoryInput.value, paymentMethod: elements.paymentMethodInput.value, isPaid: false };
+                    const newDocRef = doc(transactionsCollection);
+                    batch.set(newDocRef, newTransactionData);
+                }
+                try {
+                    await batch.commit();
+                    currentDate = new Date(initialDueDate.getUTCFullYear(), initialDueDate.getUTCMonth(), 1);
+                    updateMonthDisplay();
+                    resetForm();
+                } catch (error) {
+                    console.error("Erro ao adicionar transação(ões): ", error);
+                    alert("Não foi possível salvar a despesa. Tente novamente.");
+                }
+            }
+
+            async function saveTransaction() {
+                const id = elements.transactionIdInput.value;
+                const docRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, id);
+                const updatedData = { description: elements.descriptionInput.value, amount: -Math.abs(parseFloat(elements.amountInput.value)), dueDate: elements.dueDateInput.value, category: elements.categoryInput.value, paymentMethod: elements.paymentMethodInput.value };
+                try {
+                    await updateDoc(docRef, updatedData);
+                    resetForm();
+                } catch (error) {
+                    console.error("Erro ao atualizar transação: ", error);
+                    alert("Não foi possível salvar as alterações. Tente novamente.");
+                }
+            }
+
+            function resetForm() {
+                elements.transactionForm.reset();
+                const today = new Date();
+                elements.dueDateInput.value = today.toISOString().split('T')[0];
+                elements.installmentsInput.value = 1;
+                elements.installmentsInput.disabled = false;
+                elements.formTitle.textContent = 'Adicionar Nova Despesa';
+                elements.formButton.textContent = 'Adicionar Despesa';
+                elements.cancelEditBtn.classList.add('hidden');
+                editMode = false;
+                elements.descriptionInput.focus();
+            }
+
+            window.startEditTransaction = (id) => {
+                const transaction = allTransactions.find(t => t.id === id);
+                if (transaction) {
+                    elements.descriptionInput.value = transaction.description.replace(/\s\(\d+\/\d+\)$/, '');
+                    elements.amountInput.value = Math.abs(transaction.amount);
+                    elements.dueDateInput.value = transaction.dueDate;
+                    elements.categoryInput.value = transaction.category;
+                    elements.paymentMethodInput.value = transaction.paymentMethod;
+                    elements.transactionIdInput.value = id;
+                    elements.installmentsInput.value = 1;
+                    elements.installmentsInput.disabled = true;
+                    elements.formTitle.textContent = 'Editar Despesa';
+                    elements.formButton.textContent = 'Salvar Alterações';
+                    elements.cancelEditBtn.classList.remove('hidden');
+                    editMode = true;
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            };
+            
+            window.promptDelete = (id, groupId) => {
+                const isInstallment = groupId.startsWith('group-');
+                elements.deleteModal.classList.remove('hidden');
+                if (isInstallment) {
+                    elements.deleteModalInstallmentText.classList.remove('hidden');
+                    elements.deleteModalSingleText.classList.add('hidden');
+                    elements.deleteAllBtn.classList.remove('hidden');
+                    elements.deleteOneBtn.textContent = 'Excluir somente esta parcela';
+                    elements.deleteOneBtn.className = 'w-full px-4 py-2 bg-blue-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-blue-600';
+                    elements.deleteOneBtn.onclick = async () => { await removeTransaction(id, null, 'one'); elements.deleteModal.classList.add('hidden'); };
+                    elements.deleteAllBtn.onclick = async () => { await removeTransaction(null, groupId, 'all'); elements.deleteModal.classList.add('hidden'); };
+                } else {
+                    elements.deleteModalInstallmentText.classList.add('hidden');
+                    elements.deleteModalSingleText.classList.remove('hidden');
+                    elements.deleteAllBtn.classList.add('hidden');
+                    elements.deleteOneBtn.textContent = 'Confirmar Exclusão';
+                    elements.deleteOneBtn.className = 'w-full px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md shadow-sm hover:bg-red-600';
+                    elements.deleteOneBtn.onclick = async () => { await removeTransaction(id, null, 'one'); elements.deleteModal.classList.add('hidden'); };
+                }
+                elements.cancelDeleteBtn.onclick = () => { elements.deleteModal.classList.add('hidden'); };
+            };
+
+            async function removeTransaction(id, groupId, scope) {
+                try {
+                    if (scope === 'one') {
+                        const docRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, id);
+                        await deleteDoc(docRef);
+                    } else if (scope === 'all') {
+                        const q = query(transactionsCollection, where("groupId", "==", groupId));
+                        const querySnapshot = await getDocs(q);
+                        const batch = writeBatch(db);
+                        querySnapshot.forEach((doc) => { batch.delete(doc.ref); });
+                        await batch.commit();
+                    }
+                } catch (error) {
+                    console.error("Erro ao excluir transação(ões): ", error);
+                    alert("Não foi possível excluir a despesa. Tente novamente.");
+                }
+            }
+            
+            window.togglePaidStatus = async (id) => {
+                const transaction = allTransactions.find(t => t.id === id);
+                if (transaction) {
+                    const docRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, id);
+                    try {
+                        await updateDoc(docRef, { isPaid: !transaction.isPaid });
+                    } catch (error) {
+                        console.error("Erro ao atualizar status de pagamento: ", error);
+                        alert("Não foi possível alterar o status. Tente novamente.");
+                    }
+                }
+            };
+
+            // --- Gemini API ---
+            // ... (código igual ao anterior)
+
+            // --- Event Listeners ---
+            elements.transactionForm.addEventListener('submit', handleFormSubmit);
+            elements.cancelEditBtn.addEventListener('click', resetForm);
+            elements.prevMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() - 1); updateMonthDisplay(); renderPage(); });
+            elements.nextMonthBtn.addEventListener('click', () => { currentDate.setMonth(currentDate.getMonth() + 1); updateMonthDisplay(); renderPage(); });
+            elements.filterCategory.addEventListener('change', renderPage);
+            elements.filterPayment.addEventListener('change', renderPage);
+            
+            // --- Autenticação e Inicialização ---
+            try {
+                if (typeof __initial_auth_token !== 'undefined') {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                userId = auth.currentUser.uid;
+                if (!userId) { throw new Error("Authentication failed, user ID is null."); }
+                
+                transactionsCollection = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+                
+                onSnapshot(transactionsCollection, (snapshot) => {
+                    allTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    renderPage();
+                });
+
+                setupUI();
+            } catch (error) {
+                console.error("Firebase Auth Error:", error);
+                document.body.innerHTML = '<div class="text-center p-8 text-red-500">Falha ao conectar com o serviço de dados. Verifique sua conexão com a internet e tente novamente.</div>';
+            }
+        });
+    </script>
+</body>
+</html>
